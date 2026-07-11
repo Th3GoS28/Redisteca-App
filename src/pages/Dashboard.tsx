@@ -1,12 +1,27 @@
+import { useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
+import { supabase } from '../lib/supabase'
 
 export default function Dashboard() {
   const profile = useAuthStore((s) => s.profile)
+  const [lowStockCount, setLowStockCount] = useState<number | null>(null)
 
   const displayName =
     profile?.full_name && profile.full_name !== profile.email
       ? profile.full_name.split(' ')[0]
       : profile?.username || profile?.email
+
+  useEffect(() => {
+    async function loadLowStock() {
+      const { data } = await supabase
+        .from('products')
+        .select('id, stock_quantity, min_stock')
+        .eq('active', true)
+      const count = (data ?? []).filter((p) => p.stock_quantity <= p.min_stock).length
+      setLowStockCount(count)
+    }
+    loadLowStock()
+  }, [])
 
   return (
     <div className="p-4 space-y-4">
@@ -20,7 +35,11 @@ export default function Dashboard() {
         <SummaryCard label="Cuentas por cobrar" value="—" tone="amber" />
         <SummaryCard label="Cuentas por pagar" value="—" tone="red" />
         <SummaryCard label="Pedidos pendientes" value="—" tone="blue" />
-        <SummaryCard label="Stock bajo" value="—" tone="orange" />
+        <SummaryCard
+          label="Stock bajo"
+          value={lowStockCount === null ? '—' : String(lowStockCount)}
+          tone="orange"
+        />
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-4">
