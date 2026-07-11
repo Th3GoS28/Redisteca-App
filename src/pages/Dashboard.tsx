@@ -3,12 +3,15 @@ import { useAuthStore } from '../store/authStore'
 export default function Dashboard() {
   const profile = useAuthStore((s) => s.profile)
 
+  const displayName =
+    profile?.full_name && profile.full_name !== profile.email
+      ? profile.full_name.split(' ')[0]
+      : profile?.username || profile?.email
+
   return (
     <div className="p-4 space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-gray-800">
-          Hola, {profile?.full_name?.split(' ')[0]}
-        </h1>
+        <h1 className="text-xl font-semibold text-gray-800">Hola, {displayName}</h1>
         <p className="text-gray-500 text-sm">Este es tu resumen de hoy</p>
       </div>
 

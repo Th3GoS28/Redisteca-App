@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { Loader2 } from 'lucide-react'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [emailOrUsername, setEmailOrUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -15,10 +15,10 @@ export default function Login() {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
-    const { error } = await signIn(email, password)
+    const { error } = await signIn(emailOrUsername, password)
     setSubmitting(false)
     if (error) {
-      setError('Correo o contraseña incorrectos.')
+      setError(error)
       return
     }
     navigate('/')
@@ -39,15 +39,17 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 shadow-xl space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Correo</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Usuario o correo
+            </label>
             <input
-              type="email"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={emailOrUsername}
+              onChange={(e) => setEmailOrUsername(e.target.value)}
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-redisteca-blue"
-              placeholder="tucorreo@redisteca.com"
-              autoComplete="email"
+              placeholder="usuario o tucorreo@redisteca.com"
+              autoComplete="username"
             />
           </div>
           <div>

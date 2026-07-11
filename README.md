@@ -25,10 +25,6 @@ personalizados. Funciona como PWA instalable en iPhone y Android.
 
 ## 1. Configurar Supabase (gratis)
 
-// redisteca28 - PW
-// https://itvuudytbbkpcfcjjzcg.supabase.co
-// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml0dnV1ZHl0YmJrcGNmY2pqemNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3ODU4NjUsImV4cCI6MjA5OTM2MTg2NX0.CKj-7xuaxdc8ex0XbcWJK_ppzWsjYNc98aVckILnSko
-
 1. Crea una cuenta en https://supabase.com y un proyecto nuevo.
 2. En el panel del proyecto, ve a **SQL Editor** y pega todo el contenido
    de `supabase/schema.sql`. Ejecútalo (esto crea todas las tablas, los
@@ -68,7 +64,7 @@ Abre `http://localhost:5173` e inicia sesión con el usuario que creaste.
 2. Pon la llave pública en `.env` como `VITE_VAPID_PUBLIC_KEY`.
 3. En Supabase, configura las variables de entorno de la Edge Function
    `send-push` (Project Settings → Edge Functions → Secrets):
-   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY="yq4TliKTLAkdzSZSfhqLCwMCh7U6BxkaLmngJQ-bCf0"`, `VAPID_SUBJECT` (ej.
+   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (ej.
    `mailto:info@redisteca.com`).
 4. Despliega la función:
    ```bash

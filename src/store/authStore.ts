@@ -65,9 +65,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     })
   },
 
-  signIn: async (email, password) => {
+  signIn: async (emailOrUsername, password) => {
+    let email = emailOrUsername.trim()
+
+    // Si no parece un correo, lo tratamos como username y lo resolvemos
+    if (!email.includes('@')) {
+      const { data: resolvedEmail, error: lookupError } = await supabase.rpc(
+        'email_for_username',
+        { p_username: email }
+      )
+      if (lookupError || !resolvedEmail) {
+        return { error: 'Usuario o contraseña incorrectos.' }
+      }
+      email = resolvedEmail
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: error.message }
+    if (error) return { error: 'Usuario/correo o contraseña incorrectos.' }
     await get().loadProfile()
     return { error: null }
   },

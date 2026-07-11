@@ -41,6 +41,7 @@ create table profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   email text not null,
+  username text unique,
   phone text,
   avatar_url text,
   role_id uuid references roles(id),
@@ -236,6 +237,19 @@ as $$
       and p.active = true
   );
 $$;
+
+-- Resuelve username -> email antes de iniciar sesión (el login de Supabase
+-- solo acepta correo). Debe ser accesible SIN sesión activa.
+create or replace function email_for_username(p_username text)
+returns text
+language sql
+security definer
+stable
+as $$
+  select email from profiles where username = p_username and active = true;
+$$;
+
+grant execute on function email_for_username(text) to anon, authenticated;
 
 -- ============================================================
 -- 9. ROW LEVEL SECURITY
