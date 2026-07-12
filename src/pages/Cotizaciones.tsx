@@ -54,10 +54,13 @@ const STATUS_TONES: Record<string, string> = {
 export default function Cotizaciones() {
   const can = useAuthStore((s) => s.can)
   const canCreate = can('quotes', 'create')
+  const canEdit = can('quotes', 'edit')
+  const canApprove = can('quotes', 'approve')
 
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   async function loadQuotes() {
     setLoading(true)
@@ -72,6 +75,14 @@ export default function Cotizaciones() {
   useEffect(() => {
     loadQuotes()
   }, [])
+
+  async function changeStatus(id: string, status: string) {
+    setBusyId(id)
+    const { error } = await supabase.from('quotes').update({ status }).eq('id', id)
+    if (error) alert(error.message)
+    await loadQuotes()
+    setBusyId(null)
+  }
 
   return (
     <div className="p-4 space-y-4">
@@ -115,6 +126,39 @@ export default function Cotizaciones() {
               <p className="text-sm text-gray-700 mt-1 font-medium">
                 ${q.total.toFixed(2)}
               </p>
+
+              {q.status === 'borrador' && canEdit && (
+                <button
+                  onClick={() => changeStatus(q.id, 'enviada')}
+                  disabled={busyId === q.id}
+                  className="w-full mt-2 text-xs bg-redisteca-blue text-white rounded-lg py-2 disabled:opacity-60"
+                >
+                  Marcar como enviada al cliente
+                </button>
+              )}
+
+              {q.status === 'enviada' && (canApprove || canEdit) && (
+                <div className="flex gap-2 mt-2">
+                  {canApprove && (
+                    <button
+                      onClick={() => changeStatus(q.id, 'aprobada')}
+                      disabled={busyId === q.id}
+                      className="flex-1 text-xs bg-green-600 text-white rounded-lg py-2 disabled:opacity-60"
+                    >
+                      Aprobar
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      onClick={() => changeStatus(q.id, 'rechazada')}
+                      disabled={busyId === q.id}
+                      className="flex-1 text-xs bg-gray-200 text-gray-700 rounded-lg py-2 disabled:opacity-60"
+                    >
+                      Rechazar
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
