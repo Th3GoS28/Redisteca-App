@@ -93,52 +93,50 @@ export default function Clientes() {
       ) : (
         <div className="space-y-2">
           {filtered.map((c) => (
-            <div
-              key={c.id}
-              className="bg-white rounded-xl border border-gray-200 p-3 flex items-start justify-between"
-            >
-              <div className="min-w-0">
-                <p className="font-medium text-gray-800 truncate">{c.name}</p>
-                <p className="text-xs text-gray-500">
-                  {c.rif && `RIF: ${c.rif}`}
-                  {c.contact_name && ` · Contacto: ${c.contact_name}`}
-                </p>
-                <div className="flex items-center gap-3 mt-1">
-                  {c.phone && (
-                    <span className="flex items-center gap-1 text-xs text-gray-500">
-                      <Phone className="w-3 h-3" />
-                      {c.phone}
-                    </span>
-                  )}
-                  {c.email && (
-                    <span className="flex items-center gap-1 text-xs text-gray-500">
-                      <Mail className="w-3 h-3" />
-                      {c.email}
-                    </span>
-                  )}
+            <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-3">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-800 truncate">{c.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {c.rif && `RIF: ${c.rif}`}
+                    {c.contact_name && ` · Contacto: ${c.contact_name}`}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    {c.phone && (
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <Phone className="w-3 h-3" />
+                        {c.phone}
+                      </span>
+                    )}
+                    {c.email && (
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <Mail className="w-3 h-3" />
+                        {c.email}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {canEdit && (
+                  <button
+                    onClick={() => {
+                      setEditing(c)
+                      setShowForm(true)
+                    }}
+                    className="text-gray-400 shrink-0 ml-2"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
               </div>
-              {canEdit && (
-                <button
-                  onClick={() => {
-                    setEditing(c)
-                    setShowForm(true)
-                  }}
-                  className="text-gray-400 shrink-0 ml-2"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-              )}
+              <button
+                onClick={() => setVisitsFor(c)}
+                className="mt-2 flex items-center gap-1 text-xs text-redisteca-blue font-medium"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                Ver bitácora de visitas
+              </button>
             </div>
-            <button
-              onClick={() => setVisitsFor(c)}
-              className="mt-2 flex items-center gap-1 text-xs text-redisteca-blue font-medium"
-            >
-              <MapPin className="w-3.5 h-3.5" />
-              Ver bitácora de visitas
-            </button>
-          </div>
-        ))}
+          ))}
         </div>
       )}
 
