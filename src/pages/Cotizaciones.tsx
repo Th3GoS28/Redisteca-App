@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { Loader2, Plus, X, Trash2, FileText } from 'lucide-react'
+import { enqueueAction, isOnline } from '../lib/offlineQueue'
+import { saveCache, loadCache } from '../lib/localCache'
 
 interface Client {
   id: string
@@ -145,6 +147,11 @@ function NewQuoteModal({ onClose, onCreated }: { onClose: () => void; onCreated:
 
   useEffect(() => {
     async function loadOptions() {
+      if (!isOnline()) {
+        setClients(loadCache<Client[]>('clients')?.data ?? [])
+        setProducts(loadCache<Product[]>('products')?.data ?? [])
+        return
+      }
       const [{ data: clientsData }, { data: productsData }] = await Promise.all([
         supabase.from('clients').select('id, name').eq('active', true).order('name'),
         supabase
@@ -153,8 +160,12 @@ function NewQuoteModal({ onClose, onCreated }: { onClose: () => void; onCreated:
           .eq('active', true)
           .order('name')
       ])
-      setClients((clientsData as Client[]) ?? [])
-      setProducts((productsData as Product[]) ?? [])
+      const c = (clientsData as Client[]) ?? []
+      const p = (productsData as Product[]) ?? []
+      setClients(c)
+      setProducts(p)
+      saveCache('clients', c)
+      saveCache('products', p)
     }
     loadOptions()
   }, [])
@@ -207,36 +218,51 @@ function NewQuoteModal({ onClose, onCreated }: { onClose: () => void; onCreated:
 
     const quoteNumber = `COT-${Date.now().toString().slice(-8)}`
 
+    const quoteFields = {
+      quote_number: quoteNumber,
+      client_id: clientId,
+      status: 'borrador',
+      subtotal: total,
+      tax: 0,
+      total,
+      valid_until: validUntil || null,
+      created_by: profile?.id
+    }
+    const itemsPayload = validItems.map((it) => ({
+      product_id: it.product_id,
+      description: it.description,
+      quantity: it.quantity,
+      unit_price: it.unit_price,
+      subtotal: it.quantity * it.unit_price
+    }))
+
+    if (!isOnline()) {
+      enqueueAction('quote', { ...quoteFields, items: itemsPayload })
+      setSubmitting(false)
+      alert(
+        'Sin señal: la cotización se guardó en tu celular y se creará sola en cuanto tengas internet.'
+      )
+      onCreated()
+      return
+    }
+
     const { data: quote, error: quoteError } = await supabase
       .from('quotes')
-      .insert({
-        quote_number: quoteNumber,
-        client_id: clientId,
-        status: 'borrador',
-        subtotal: total,
-        tax: 0,
-        total,
-        valid_until: validUntil || null,
-        created_by: profile?.id
-      })
+      .insert(quoteFields)
       .select()
       .single()
 
     if (quoteError || !quote) {
-      setError(quoteError?.message ?? 'No se pudo crear la cotización.')
+      // Falló por conexión a mitad de camino: la guardamos local igual.
+      enqueueAction('quote', { ...quoteFields, items: itemsPayload })
       setSubmitting(false)
+      alert('No se pudo enviar en este momento — se guardó en tu celular y se reintentará solo.')
+      onCreated()
       return
     }
 
     const { error: itemsError } = await supabase.from('quote_items').insert(
-      validItems.map((it) => ({
-        quote_id: quote.id,
-        product_id: it.product_id,
-        description: it.description,
-        quantity: it.quantity,
-        unit_price: it.unit_price,
-        subtotal: it.quantity * it.unit_price
-      }))
+      itemsPayload.map((it) => ({ ...it, quote_id: quote.id }))
     )
 
     setSubmitting(false)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 import { Loader2, Plus, X, Trash2, Truck } from 'lucide-react'
+import SignaturePad from '../components/SignaturePad'
 
 interface Client {
   id: string
@@ -60,6 +61,7 @@ export default function Pedidos() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [signingOrder, setSigningOrder] = useState<OrderRow | null>(null)
 
   async function loadOrders() {
     setLoading(true)
@@ -76,16 +78,29 @@ export default function Pedidos() {
   }, [])
 
   async function advanceStatus(order: OrderRow) {
-    setBusyId(order.id)
     const currentIndex = STATUS_FLOW.indexOf(order.status)
     const nextStatus = STATUS_FLOW[currentIndex + 1]
 
     if (nextStatus === 'entregado') {
-      const { error } = await supabase.rpc('deliver_order', { p_order_id: order.id })
-      if (error) alert(error.message)
-    } else if (nextStatus) {
-      await supabase.from('orders').update({ status: nextStatus }).eq('id', order.id)
+      setSigningOrder(order)
+      return
     }
+    setBusyId(order.id)
+    await supabase.from('orders').update({ status: nextStatus }).eq('id', order.id)
+    await loadOrders()
+    setBusyId(null)
+  }
+
+  async function confirmDelivery(signatureDataUrl: string, receivedBy: string) {
+    if (!signingOrder) return
+    setBusyId(signingOrder.id)
+    const { error } = await supabase.rpc('deliver_order', {
+      p_order_id: signingOrder.id,
+      p_signature: signatureDataUrl,
+      p_received_by: receivedBy || null
+    })
+    if (error) alert(error.message)
+    setSigningOrder(null)
     await loadOrders()
     setBusyId(null)
   }
@@ -174,6 +189,13 @@ export default function Pedidos() {
             setShowForm(false)
             loadOrders()
           }}
+        />
+      )}
+
+      {signingOrder && (
+        <SignaturePad
+          onClose={() => setSigningOrder(null)}
+          onConfirm={confirmDelivery}
         />
       )}
     </div>

@@ -10,6 +10,8 @@ import Clientes from './pages/Clientes'
 import Finanzas from './pages/Finanzas'
 import Notificaciones from './pages/Notificaciones'
 import Usuarios from './pages/Usuarios'
+import Licitaciones from './pages/Licitaciones'
+import Catalogo from './pages/Catalogo'
 
 export default function App() {
   return (
@@ -40,6 +42,22 @@ export default function App() {
             element={
               <RequirePermission module="quotes" action="view">
                 <Cotizaciones />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/licitaciones"
+            element={
+              <RequirePermission module="quotes" action="view">
+                <Licitaciones />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/catalogo"
+            element={
+              <RequirePermission module="inventory" action="view">
+                <Catalogo />
               </RequirePermission>
             }
           />

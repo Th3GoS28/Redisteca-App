@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { Loader2, Plus, X, Search, Pencil, Phone, Mail, MapPin, Camera } from 'lucide-react'
+import { Loader2, Plus, X, Search, Pencil, Phone, Mail, MapPin, Camera, WifiOff } from 'lucide-react'
+import { enqueueAction, isOnline } from '../lib/offlineQueue'
 
 interface Client {
   id: string
@@ -355,6 +356,32 @@ function VisitsModal({ client, onClose }: { client: Client; onClose: () => void 
     setSubmitting(true)
     setError(null)
 
+    const visitPayload = {
+      client_id: client.id,
+      contact_name: contactName || null,
+      summary,
+      next_step: nextStep || null,
+      next_step_date: nextStepDate || null,
+      photo_url: null as string | null,
+      created_by: profile?.id
+    }
+
+    // Sin señal: guarda local y sincroniza sola después (sin foto, por
+    // tamaño — al volver la señal puedes editar la visita si hace falta).
+    if (!isOnline()) {
+      enqueueAction('visit', visitPayload)
+      setSubmitting(false)
+      setShowAdd(false)
+      setContactName('')
+      setSummary('')
+      setNextStep('')
+      setNextStepDate('')
+      setPhoto(null)
+      setError(null)
+      alert('Sin señal: la visita se guardó en tu celular y se subirá sola en cuanto tengas internet.')
+      return
+    }
+
     let photo_url: string | null = null
     if (photo) {
       const path = `${client.id}/${Date.now()}-${photo.name}`
@@ -366,19 +393,15 @@ function VisitsModal({ client, onClose }: { client: Client; onClose: () => void 
       }
     }
 
-    const { error } = await supabase.from('visits').insert({
-      client_id: client.id,
-      contact_name: contactName || null,
-      summary,
-      next_step: nextStep || null,
-      next_step_date: nextStepDate || null,
-      photo_url,
-      created_by: profile?.id
-    })
+    const { error } = await supabase.from('visits').insert({ ...visitPayload, photo_url })
 
     setSubmitting(false)
+
     if (error) {
-      setError(error.message)
+      // Falló por conexión a mitad de camino: igual la guardamos local.
+      enqueueAction('visit', visitPayload)
+      setShowAdd(false)
+      alert('No se pudo subir en este momento — se guardó en tu celular y se reintentará solo.')
       return
     }
     setShowAdd(false)

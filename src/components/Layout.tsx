@@ -1,5 +1,8 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useAuthStore } from '../store/authStore'
+import { getQueueCount } from '../lib/offlineQueue'
+import { syncNow } from '../lib/offlineSync'
 import {
   LayoutDashboard,
   Package,
@@ -9,13 +12,18 @@ import {
   Wallet,
   Bell,
   Settings,
-  LogOut
+  LogOut,
+  Gavel,
+  BookOpen,
+  CloudOff
 } from 'lucide-react'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Inicio', icon: LayoutDashboard, module: null as null | string, action: null },
   { to: '/inventario', label: 'Inventario', icon: Package, module: 'inventory', action: 'view' },
+  { to: '/catalogo', label: 'Catálogo', icon: BookOpen, module: 'inventory', action: 'view' },
   { to: '/cotizaciones', label: 'Cotizar', icon: FileText, module: 'quotes', action: 'view' },
+  { to: '/licitaciones', label: 'Licitar', icon: Gavel, module: 'quotes', action: 'view' },
   { to: '/pedidos', label: 'Pedidos', icon: Truck, module: 'orders', action: 'view' },
   { to: '/clientes', label: 'Clientes', icon: Users, module: 'clients', action: 'view' },
   { to: '/finanzas', label: 'Finanzas', icon: Wallet, module: 'finance', action: 'view' }
@@ -24,10 +32,32 @@ const NAV_ITEMS = [
 export default function Layout() {
   const { profile, can, signOut } = useAuthStore()
   const navigate = useNavigate()
+  const [pendingCount, setPendingCount] = useState(0)
+  const [syncing, setSyncing] = useState(false)
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => !item.module || can(item.module as any, item.action as any)
   )
+
+  useEffect(() => {
+    function refresh() {
+      setPendingCount(getQueueCount())
+    }
+    refresh()
+    const interval = setInterval(refresh, 5000)
+    window.addEventListener('online', refresh)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('online', refresh)
+    }
+  }, [])
+
+  async function handleSync() {
+    setSyncing(true)
+    await syncNow()
+    setPendingCount(getQueueCount())
+    setSyncing(false)
+  }
 
   async function handleLogout() {
     if (!confirm('¿Cerrar sesión?')) return
@@ -45,6 +75,17 @@ export default function Layout() {
             <p className="text-xs text-white/70">{profile?.role?.name}</p>
           </div>
           <div className="flex items-center gap-3">
+            {pendingCount > 0 && (
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="relative flex items-center gap-1 text-xs bg-white/15 rounded-full px-2 py-1"
+                title="Tienes datos guardados sin subir — toca para sincronizar"
+              >
+                <CloudOff className="w-3.5 h-3.5" />
+                {syncing ? '...' : pendingCount}
+              </button>
+            )}
             <NavLink to="/notificaciones" className="relative">
               <Bell className="w-5 h-5" />
             </NavLink>
@@ -66,8 +107,8 @@ export default function Layout() {
       </main>
 
       {/* Navegación inferior (estilo app nativa) */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-bottom">
-        <div className="flex justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-bottom overflow-x-auto">
+        <div className="flex justify-around min-w-max sm:min-w-0">
           {visibleItems.map((item) => (
             <NavLink
               key={item.to}
