@@ -297,15 +297,33 @@ function NewTransactionModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-              <input
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="input"
-                placeholder="venta, nómina..."
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+            {type === 'egreso' ? (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {['Gasolina', 'Peaje', 'Comida', 'Hospedaje', 'Otro gasto de campo'].map((c) => (
+                  <button
+                    type="button"
+                    key={c}
+                    onClick={() => setCategory(c)}
+                    className={`text-xs rounded-full px-2.5 py-1 ${
+                      category === c
+                        ? 'bg-redisteca-blue text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="input"
+              placeholder="venta, nómina..."
+            />
+          </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Fecha de vencimiento
