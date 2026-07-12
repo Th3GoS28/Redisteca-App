@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { Loader2, Plus, X, Search, AlertTriangle, Pencil } from 'lucide-react'
+import { Loader2, Plus, X, Search, AlertTriangle, Pencil, Camera } from 'lucide-react'
 
 interface Product {
   id: string
@@ -15,6 +15,7 @@ interface Product {
   stock_quantity: number
   min_stock: number
   location: string | null
+  image_url: string | null
   active: boolean
 }
 
@@ -124,23 +125,36 @@ export default function Inventario() {
                 key={p.id}
                 className="bg-white rounded-xl border border-gray-200 p-3 flex items-start justify-between"
               >
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-800 truncate">{p.name}</p>
-                  <p className="text-xs text-gray-500">
-                    SKU: {p.sku} {p.brand && `· ${p.brand}`}
-                    {p.location && ` · ${p.location}`}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span
-                      className={`text-xs rounded-full px-2 py-0.5 ${
-                        lowStock ? 'bg-orange-50 text-orange-700' : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {p.stock_quantity} {p.unit} en stock
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      ${p.sale_price.toFixed(2)}
-                    </span>
+                <div className="flex items-start gap-3 min-w-0">
+                  {p.image_url ? (
+                    <img
+                      src={p.image_url}
+                      alt={p.name}
+                      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-gray-100"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                      <Camera className="w-5 h-5 text-gray-300" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-800 truncate">{p.name}</p>
+                    <p className="text-xs text-gray-500">
+                      SKU: {p.sku} {p.brand && `· ${p.brand}`}
+                      {p.location && ` · ${p.location}`}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        className={`text-xs rounded-full px-2 py-0.5 ${
+                          lowStock ? 'bg-orange-50 text-orange-700' : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {p.stock_quantity} {p.unit} en stock
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        ${p.sale_price.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 {canEdit && (
@@ -195,6 +209,8 @@ function ProductForm({
     min_stock: product?.min_stock ?? 0,
     location: product?.location ?? ''
   })
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(product?.image_url ?? null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -202,17 +218,34 @@ function ProductForm({
     setForm((f) => ({ ...f, [key]: value }))
   }
 
+  function handlePhotoChange(file: File | null) {
+    setPhoto(file)
+    setPhotoPreview(file ? URL.createObjectURL(file) : product?.image_url ?? null)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
+
+    let image_url = product?.image_url ?? null
+    if (photo) {
+      const path = `${form.sku || Date.now()}-${Date.now()}-${photo.name}`
+      const { error: uploadError } = await supabase.storage
+        .from('product-photos')
+        .upload(path, photo)
+      if (!uploadError) {
+        image_url = supabase.storage.from('product-photos').getPublicUrl(path).data.publicUrl
+      }
+    }
 
     const payload = {
       ...form,
       cost_price: Number(form.cost_price),
       sale_price: Number(form.sale_price),
       stock_quantity: Number(form.stock_quantity),
-      min_stock: Number(form.min_stock)
+      min_stock: Number(form.min_stock),
+      image_url
     }
 
     const { error } = product
@@ -246,6 +279,35 @@ function ProductForm({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Foto (opcional)
+            </label>
+            <label className="flex items-center gap-3 border border-dashed border-gray-300 rounded-lg p-2.5 cursor-pointer">
+              {photoPreview ? (
+                <img
+                  src={photoPreview}
+                  alt="Vista previa"
+                  className="w-12 h-12 rounded-lg object-cover"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
+                  <Camera className="w-5 h-5 text-gray-300" />
+                </div>
+              )}
+              <span className="text-sm text-gray-500">
+                {photo ? photo.name : 'Tomar o adjuntar foto del producto'}
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handlePhotoChange(e.target.files?.[0] ?? null)}
+              />
+            </label>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <Field label="SKU">
               <input

@@ -1,7 +1,26 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { Loader2, Plus, X, Check, Ban } from 'lucide-react'
+import { Loader2, Plus, X, Check, Ban, Shield } from 'lucide-react'
+
+const MODULES: { key: string; label: string }[] = [
+  { key: 'inventory', label: 'Inventario' },
+  { key: 'quotes', label: 'Cotizaciones / Licitaciones' },
+  { key: 'orders', label: 'Pedidos' },
+  { key: 'clients', label: 'Clientes' },
+  { key: 'finance', label: 'Finanzas' },
+  { key: 'reports', label: 'Reportes' },
+  { key: 'users', label: 'Usuarios' },
+  { key: 'roles', label: 'Roles' }
+]
+const ACTIONS: { key: string; label: string }[] = [
+  { key: 'view', label: 'Ver' },
+  { key: 'create', label: 'Crear' },
+  { key: 'edit', label: 'Editar' },
+  { key: 'delete', label: 'Borrar' },
+  { key: 'approve', label: 'Aprobar' },
+  { key: 'export', label: 'Exportar' }
+]
 
 interface RoleRow {
   id: string
@@ -27,6 +46,8 @@ export default function Usuarios() {
   const [roles, setRoles] = useState<RoleRow[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [tab, setTab] = useState<'usuarios' | 'roles'>('usuarios')
+  const canManageRoles = can('roles', 'edit')
 
   async function loadData() {
     setLoading(true)
@@ -61,7 +82,7 @@ export default function Usuarios() {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-800">Usuarios</h1>
-        {canCreate && (
+        {tab === 'usuarios' && canCreate && (
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-1 bg-redisteca-blue text-white text-sm rounded-lg px-3 py-2"
@@ -71,6 +92,33 @@ export default function Usuarios() {
           </button>
         )}
       </div>
+
+      {canManageRoles && (
+        <div className="flex bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setTab('usuarios')}
+            className={`flex-1 text-sm rounded-md py-1.5 ${
+              tab === 'usuarios' ? 'bg-white shadow text-gray-800' : 'text-gray-500'
+            }`}
+          >
+            Usuarios
+          </button>
+          <button
+            onClick={() => setTab('roles')}
+            className={`flex-1 text-sm rounded-md py-1.5 flex items-center justify-center gap-1 ${
+              tab === 'roles' ? 'bg-white shadow text-gray-800' : 'text-gray-500'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Roles y permisos
+          </button>
+        </div>
+      )}
+
+      {tab === 'roles' && canManageRoles ? (
+        <RolesPanel roles={roles} onRolesChanged={loadData} />
+      ) : (
+        <>
 
       {loading ? (
         <div className="flex justify-center py-10">
@@ -122,6 +170,8 @@ export default function Usuarios() {
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
 
       {showCreate && (
@@ -261,6 +311,217 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       {children}
+    </div>
+  )
+}
+
+interface RoleWithPermissions {
+  id: string
+  name: string
+  description: string | null
+  is_system: boolean
+  permissions: { module: string; action: string }[]
+}
+
+function RolesPanel({
+  roles,
+  onRolesChanged
+}: {
+  roles: RoleRow[]
+  onRolesChanged: () => void
+}) {
+  const [detailed, setDetailed] = useState<RoleWithPermissions[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newDescription, setNewDescription] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+
+  async function loadDetailed() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('roles')
+      .select('id, name, description, is_system, role_permissions(permission:permissions(module, action))')
+      .order('name')
+
+    const mapped = (data ?? []).map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      is_system: r.is_system,
+      permissions: (r.role_permissions ?? []).map((rp: any) => rp.permission)
+    }))
+    setDetailed(mapped)
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadDetailed()
+  }, [roles])
+
+  function hasPermission(role: RoleWithPermissions, module: string, action: string) {
+    return role.permissions.some((p) => p.module === module && p.action === action)
+  }
+
+  async function togglePermission(role: RoleWithPermissions, module: string, action: string) {
+    if (role.is_system) return
+    const key = `${role.id}-${module}-${action}`
+    setBusyKey(key)
+    const enabled = !hasPermission(role, module, action)
+    const { error } = await supabase.rpc('set_role_permission', {
+      p_role_id: role.id,
+      p_module: module,
+      p_action: action,
+      p_enabled: enabled
+    })
+    if (error) alert(error.message)
+    await loadDetailed()
+    setBusyKey(null)
+  }
+
+  async function handleCreateRole(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newName.trim()) {
+      setError('Ponle un nombre al rol.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    const { error } = await supabase.rpc('create_role', {
+      p_name: newName,
+      p_description: newDescription || null
+    })
+    setSubmitting(false)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setShowCreate(false)
+    setNewName('')
+    setNewDescription('')
+    onRolesChanged()
+    loadDetailed()
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-10">
+        <Loader2 className="w-6 h-6 animate-spin text-redisteca-blue" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <button
+        onClick={() => setShowCreate(true)}
+        className="w-full flex items-center justify-center gap-1 border border-dashed border-gray-300 text-gray-600 text-sm rounded-lg py-2.5"
+      >
+        <Plus className="w-4 h-4" />
+        Crear nuevo rol
+      </button>
+
+      {detailed.map((role) => (
+        <div key={role.id} className="bg-white rounded-xl border border-gray-200 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="font-medium text-gray-800">{role.name}</p>
+              {role.description && (
+                <p className="text-xs text-gray-500">{role.description}</p>
+              )}
+            </div>
+            {role.is_system && (
+              <span className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-2 py-1">
+                Acceso total, no editable
+              </span>
+            )}
+          </div>
+
+          {!role.is_system && (
+            <div className="overflow-x-auto -mx-3 px-3">
+              <table className="text-xs w-full min-w-[420px]">
+                <thead>
+                  <tr>
+                    <th className="text-left font-medium text-gray-500 pb-1">Módulo</th>
+                    {ACTIONS.map((a) => (
+                      <th key={a.key} className="text-center font-medium text-gray-500 pb-1 px-1">
+                        {a.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {MODULES.map((m) => (
+                    <tr key={m.key} className="border-t border-gray-100">
+                      <td className="py-1.5 text-gray-700">{m.label}</td>
+                      {ACTIONS.map((a) => {
+                        const key = `${role.id}-${m.key}-${a.key}`
+                        const enabled = hasPermission(role, m.key, a.key)
+                        return (
+                          <td key={a.key} className="text-center px-1">
+                            <button
+                              disabled={busyKey === key}
+                              onClick={() => togglePermission(role, m.key, a.key)}
+                              className={`w-5 h-5 rounded ${
+                                enabled ? 'bg-redisteca-blue' : 'bg-gray-200'
+                              } disabled:opacity-50`}
+                            />
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-800">Nuevo rol</h2>
+              <button onClick={() => setShowCreate(false)}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateRole} className="space-y-3">
+              <Field label="Nombre del rol">
+                <input
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="input"
+                  placeholder="Ej. Supervisor de almacén"
+                />
+              </Field>
+              <Field label="Descripción (opcional)">
+                <input
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  className="input"
+                />
+              </Field>
+              <p className="text-xs text-gray-500">
+                El rol se crea sin permisos — actívalos desde la tabla después de guardarlo.
+              </p>
+              {error && <p className="text-red-600 text-sm">{error}</p>}
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full flex items-center justify-center gap-2 bg-redisteca-blue text-white rounded-lg py-2.5 font-medium disabled:opacity-60"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                Crear rol
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

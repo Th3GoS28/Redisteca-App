@@ -13,6 +13,7 @@ interface Product {
   unit: string
   sale_price: number
   stock_quantity: number
+  image_url: string | null
 }
 
 export default function Catalogo() {
@@ -32,7 +33,7 @@ export default function Catalogo() {
       }
       const { data } = await supabase
         .from('products')
-        .select('id, sku, name, description, brand, unit, sale_price, stock_quantity')
+        .select('id, sku, name, description, brand, unit, sale_price, stock_quantity, image_url')
         .eq('active', true)
         .order('name')
       const list = (data as Product[]) ?? []
@@ -100,6 +101,15 @@ export default function Catalogo() {
         <div className="grid grid-cols-2 gap-2">
           {filtered.map((p) => (
             <div key={p.id} className="bg-white rounded-xl border border-gray-200 p-3">
+              {p.image_url ? (
+                <img
+                  src={p.image_url}
+                  alt={p.name}
+                  className="w-full h-24 object-cover rounded-lg mb-2 bg-gray-100"
+                />
+              ) : (
+                <div className="w-full h-24 rounded-lg bg-gray-100 mb-2" />
+              )}
               {p.brand && (
                 <span className="text-[10px] uppercase tracking-wide text-redisteca-blue font-medium">
                   {p.brand}

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
-import { Loader2, Plus, X, Trash2, FileText } from 'lucide-react'
+import { Loader2, Plus, X, Trash2, FileText, Download } from 'lucide-react'
 import { enqueueAction, isOnline } from '../lib/offlineQueue'
 import { saveCache, loadCache } from '../lib/localCache'
+import { generateQuotePdf } from '../lib/quotePdf'
 
 interface Client {
   id: string
@@ -476,20 +477,43 @@ function QuoteDetailModal({ quote, onClose }: { quote: QuoteRow; onClose: () => 
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<QuoteItemDetail[]>([])
   const [notes, setNotes] = useState<string | null>(null)
+  const [validUntil, setValidUntil] = useState<string | null>(null)
+  const [clientRif, setClientRif] = useState<string | null>(null)
+  const [createdAt, setCreatedAt] = useState<string>(new Date().toISOString())
 
   useEffect(() => {
     async function load() {
       setLoading(true)
       const [{ data: itemsData }, { data: quoteData }] = await Promise.all([
         supabase.from('quote_items').select('*').eq('quote_id', quote.id),
-        supabase.from('quotes').select('notes, valid_until').eq('id', quote.id).single()
+        supabase
+          .from('quotes')
+          .select('notes, valid_until, created_at, client:clients(rif)')
+          .eq('id', quote.id)
+          .single()
       ])
       setItems((itemsData as QuoteItemDetail[]) ?? [])
       setNotes((quoteData as any)?.notes ?? null)
+      setValidUntil((quoteData as any)?.valid_until ?? null)
+      setCreatedAt((quoteData as any)?.created_at ?? new Date().toISOString())
+      setClientRif((quoteData as any)?.client?.rif ?? null)
       setLoading(false)
     }
     load()
   }, [quote.id])
+
+  function handleDownload() {
+    generateQuotePdf({
+      quote_number: quote.quote_number,
+      client_name: quote.client?.name ?? 'Cliente',
+      client_rif: clientRif,
+      valid_until: validUntil,
+      created_at: createdAt,
+      items,
+      total: quote.total,
+      notes
+    })
+  }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
@@ -538,6 +562,14 @@ function QuoteDetailModal({ quote, onClose }: { quote: QuoteRow; onClose: () => 
             </div>
 
             {notes && <p className="text-sm text-gray-600">Notas: {notes}</p>}
+
+            <button
+              onClick={handleDownload}
+              className="w-full flex items-center justify-center gap-2 bg-redisteca-blue text-white rounded-lg py-2.5 text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              Descargar PDF
+            </button>
           </>
         )}
       </div>
