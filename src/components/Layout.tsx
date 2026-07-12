@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import {
   LayoutDashboard,
@@ -8,7 +8,8 @@ import {
   Users,
   Wallet,
   Bell,
-  Settings
+  Settings,
+  LogOut
 } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -21,11 +22,18 @@ const NAV_ITEMS = [
 ]
 
 export default function Layout() {
-  const { profile, can } = useAuthStore()
+  const { profile, can, signOut } = useAuthStore()
+  const navigate = useNavigate()
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => !item.module || can(item.module as any, item.action as any)
   )
+
+  async function handleLogout() {
+    if (!confirm('¿Cerrar sesión?')) return
+    await signOut()
+    navigate('/login')
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -45,6 +53,9 @@ export default function Layout() {
                 <Settings className="w-5 h-5" />
               </NavLink>
             )}
+            <button onClick={handleLogout} aria-label="Cerrar sesión">
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         </div>
       </header>
