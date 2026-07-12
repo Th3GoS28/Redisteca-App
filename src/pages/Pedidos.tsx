@@ -62,6 +62,7 @@ export default function Pedidos() {
   const [showForm, setShowForm] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [signingOrder, setSigningOrder] = useState<OrderRow | null>(null)
+  const [detailOrder, setDetailOrder] = useState<OrderRow | null>(null)
 
   async function loadOrders() {
     setLoading(true)
@@ -143,7 +144,11 @@ export default function Pedidos() {
             const nextStatus = STATUS_FLOW[STATUS_FLOW.indexOf(o.status) + 1]
             const isFinal = o.status === 'entregado' || o.status === 'cancelado'
             return (
-              <div key={o.id} className="bg-white rounded-xl border border-gray-200 p-3">
+              <div
+                key={o.id}
+                onClick={() => setDetailOrder(o)}
+                className="bg-white rounded-xl border border-gray-200 p-3 cursor-pointer active:bg-gray-50"
+              >
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-medium text-gray-800">{o.order_number}</p>
@@ -158,7 +163,7 @@ export default function Pedidos() {
                 <p className="text-sm text-gray-700 mt-1 font-medium">${o.total.toFixed(2)}</p>
 
                 {canEdit && !isFinal && (
-                  <div className="flex gap-2 mt-2">
+                  <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => advanceStatus(o)}
                       disabled={busyId === o.id}
@@ -197,6 +202,10 @@ export default function Pedidos() {
           onClose={() => setSigningOrder(null)}
           onConfirm={confirmDelivery}
         />
+      )}
+
+      {detailOrder && (
+        <OrderDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />
       )}
     </div>
   )
@@ -485,6 +494,121 @@ function NewOrderModal({ onClose, onCreated }: { onClose: () => void; onCreated:
             Crear pedido
           </button>
         </form>
+      </div>
+    </div>
+  )
+}
+
+interface OrderItemDetail {
+  id: string
+  quantity: number
+  delivered_quantity: number
+  unit_price: number
+  subtotal: number
+  product: { name: string; sku: string } | null
+}
+
+function OrderDetailModal({ order, onClose }: { order: OrderRow; onClose: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<OrderItemDetail[]>([])
+  const [full, setFull] = useState<{
+    signature_data: string | null
+    received_by: string | null
+    delivery_date: string | null
+    notes: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const [{ data: orderData }, { data: itemsData }] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('signature_data, received_by, delivery_date, notes')
+          .eq('id', order.id)
+          .single(),
+        supabase
+          .from('order_items')
+          .select('*, product:products(name, sku)')
+          .eq('order_id', order.id)
+      ])
+      setFull(orderData as any)
+      setItems((itemsData as any) ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [order.id])
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-800">{order.order_number}</h2>
+            <p className="text-xs text-gray-500">{order.client?.name ?? 'Sin cliente'}</p>
+          </div>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <span
+          className={`inline-block text-xs rounded-full px-2 py-1 ${STATUS_TONES[order.status]}`}
+        >
+          {STATUS_LABELS[order.status] ?? order.status}
+        </span>
+
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-redisteca-blue" />
+          </div>
+        ) : (
+          <>
+            {full?.delivery_date && (
+              <p className="text-sm text-gray-600">
+                Entrega estimada: <span className="font-medium">{full.delivery_date}</span>
+              </p>
+            )}
+
+            <div className="space-y-2">
+              {items.map((it) => (
+                <div key={it.id} className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                  <div>
+                    <p className="text-gray-800">{it.product?.name ?? 'Producto'}</p>
+                    <p className="text-xs text-gray-400">
+                      {it.quantity} x ${it.unit_price.toFixed(2)}
+                      {order.status === 'entregado' && ` · Entregado: ${it.delivered_quantity}`}
+                    </p>
+                  </div>
+                  <p className="text-gray-700 font-medium">${it.subtotal.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-sm text-gray-500">Total</span>
+              <span className="text-lg font-semibold text-gray-800">
+                ${order.total.toFixed(2)}
+              </span>
+            </div>
+
+            {full?.notes && <p className="text-sm text-gray-600">Notas: {full.notes}</p>}
+
+            {order.status === 'entregado' && full?.signature_data && (
+              <div className="border border-gray-200 rounded-xl p-3">
+                <p className="text-sm font-medium text-gray-700 mb-1">Firma de recibido</p>
+                {full.received_by && (
+                  <p className="text-xs text-gray-500 mb-2">Recibido por: {full.received_by}</p>
+                )}
+                <img
+                  src={full.signature_data}
+                  alt="Firma de recibido"
+                  className="w-full bg-gray-50 rounded-lg border border-gray-100"
+                />
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )

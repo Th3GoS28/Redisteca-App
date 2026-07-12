@@ -61,6 +61,7 @@ export default function Cotizaciones() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [detailQuote, setDetailQuote] = useState<QuoteRow | null>(null)
 
   async function loadQuotes() {
     setLoading(true)
@@ -111,7 +112,11 @@ export default function Cotizaciones() {
       ) : (
         <div className="space-y-2">
           {quotes.map((q) => (
-            <div key={q.id} className="bg-white rounded-xl border border-gray-200 p-3">
+            <div
+              key={q.id}
+              onClick={() => setDetailQuote(q)}
+              className="bg-white rounded-xl border border-gray-200 p-3 cursor-pointer active:bg-gray-50"
+            >
               <div className="flex items-start justify-between">
                 <div>
                   <p className="font-medium text-gray-800">{q.quote_number}</p>
@@ -127,27 +132,28 @@ export default function Cotizaciones() {
                 ${q.total.toFixed(2)}
               </p>
 
-              {q.status === 'borrador' && canEdit && (
-                <button
-                  onClick={() => changeStatus(q.id, 'enviada')}
-                  disabled={busyId === q.id}
-                  className="w-full mt-2 text-xs bg-redisteca-blue text-white rounded-lg py-2 disabled:opacity-60"
-                >
-                  Marcar como enviada al cliente
-                </button>
-              )}
+              <div onClick={(e) => e.stopPropagation()}>
+                {q.status === 'borrador' && canEdit && (
+                  <button
+                    onClick={() => changeStatus(q.id, 'enviada')}
+                    disabled={busyId === q.id}
+                    className="w-full mt-2 text-xs bg-redisteca-blue text-white rounded-lg py-2 disabled:opacity-60"
+                  >
+                    Marcar como enviada al cliente
+                  </button>
+                )}
 
-              {q.status === 'enviada' && (canApprove || canEdit) && (
-                <div className="flex gap-2 mt-2">
-                  {canApprove && (
-                    <button
-                      onClick={() => changeStatus(q.id, 'aprobada')}
-                      disabled={busyId === q.id}
-                      className="flex-1 text-xs bg-green-600 text-white rounded-lg py-2 disabled:opacity-60"
-                    >
-                      Aprobar
-                    </button>
-                  )}
+                {q.status === 'enviada' && (canApprove || canEdit) && (
+                  <div className="flex gap-2 mt-2">
+                    {canApprove && (
+                      <button
+                        onClick={() => changeStatus(q.id, 'aprobada')}
+                        disabled={busyId === q.id}
+                        className="flex-1 text-xs bg-green-600 text-white rounded-lg py-2 disabled:opacity-60"
+                      >
+                        Aprobar
+                      </button>
+                    )}
                   {canEdit && (
                     <button
                       onClick={() => changeStatus(q.id, 'rechazada')}
@@ -159,6 +165,7 @@ export default function Cotizaciones() {
                   )}
                 </div>
               )}
+              </div>
             </div>
           ))}
         </div>
@@ -172,6 +179,10 @@ export default function Cotizaciones() {
             loadQuotes()
           }}
         />
+      )}
+
+      {detailQuote && (
+        <QuoteDetailModal quote={detailQuote} onClose={() => setDetailQuote(null)} />
       )}
     </div>
   )
@@ -448,6 +459,87 @@ function NewQuoteModal({ onClose, onCreated }: { onClose: () => void; onCreated:
             Crear cotización
           </button>
         </form>
+      </div>
+    </div>
+  )
+}
+
+interface QuoteItemDetail {
+  id: string
+  description: string
+  quantity: number
+  unit_price: number
+  subtotal: number
+}
+
+function QuoteDetailModal({ quote, onClose }: { quote: QuoteRow; onClose: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<QuoteItemDetail[]>([])
+  const [notes, setNotes] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const [{ data: itemsData }, { data: quoteData }] = await Promise.all([
+        supabase.from('quote_items').select('*').eq('quote_id', quote.id),
+        supabase.from('quotes').select('notes, valid_until').eq('id', quote.id).single()
+      ])
+      setItems((itemsData as QuoteItemDetail[]) ?? [])
+      setNotes((quoteData as any)?.notes ?? null)
+      setLoading(false)
+    }
+    load()
+  }, [quote.id])
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-800">{quote.quote_number}</h2>
+            <p className="text-xs text-gray-500">{quote.client?.name ?? 'Sin cliente'}</p>
+          </div>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <span
+          className={`inline-block text-xs rounded-full px-2 py-1 ${STATUS_TONES[quote.status]}`}
+        >
+          {STATUS_LABELS[quote.status] ?? quote.status}
+        </span>
+
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-redisteca-blue" />
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {items.map((it) => (
+                <div key={it.id} className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                  <div>
+                    <p className="text-gray-800">{it.description}</p>
+                    <p className="text-xs text-gray-400">
+                      {it.quantity} x ${it.unit_price.toFixed(2)}
+                    </p>
+                  </div>
+                  <p className="text-gray-700 font-medium">${it.subtotal.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-sm text-gray-500">Total</span>
+              <span className="text-lg font-semibold text-gray-800">
+                ${quote.total.toFixed(2)}
+              </span>
+            </div>
+
+            {notes && <p className="text-sm text-gray-600">Notas: {notes}</p>}
+          </>
+        )}
       </div>
     </div>
   )
