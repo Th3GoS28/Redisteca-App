@@ -5,6 +5,9 @@ import { supabase } from '../lib/supabase'
 export default function Dashboard() {
   const profile = useAuthStore((s) => s.profile)
   const [lowStockCount, setLowStockCount] = useState<number | null>(null)
+  const [porCobrar, setPorCobrar] = useState<number | null>(null)
+  const [porPagar, setPorPagar] = useState<number | null>(null)
+  const [pedidosPendientes, setPedidosPendientes] = useState<number | null>(null)
 
   const displayName =
     profile?.full_name && profile.full_name !== profile.email
@@ -12,15 +15,35 @@ export default function Dashboard() {
       : profile?.username || profile?.email
 
   useEffect(() => {
-    async function loadLowStock() {
-      const { data } = await supabase
+    async function loadSummary() {
+      const { data: products } = await supabase
         .from('products')
         .select('id, stock_quantity, min_stock')
         .eq('active', true)
-      const count = (data ?? []).filter((p) => p.stock_quantity <= p.min_stock).length
-      setLowStockCount(count)
+      setLowStockCount((products ?? []).filter((p) => p.stock_quantity <= p.min_stock).length)
+
+      const { data: transactions } = await supabase
+        .from('transactions')
+        .select('type, amount, status')
+        .neq('status', 'pagado')
+      setPorCobrar(
+        (transactions ?? [])
+          .filter((t) => t.type === 'ingreso')
+          .reduce((s, t) => s + Number(t.amount), 0)
+      )
+      setPorPagar(
+        (transactions ?? [])
+          .filter((t) => t.type === 'egreso')
+          .reduce((s, t) => s + Number(t.amount), 0)
+      )
+
+      const { count } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['pendiente', 'procesando', 'listo'])
+      setPedidosPendientes(count ?? 0)
     }
-    loadLowStock()
+    loadSummary()
   }, [])
 
   return (
@@ -32,9 +55,21 @@ export default function Dashboard() {
 
       {/* Estas tarjetas se conectarán a datos reales de Supabase en la siguiente fase */}
       <div className="grid grid-cols-2 gap-3">
-        <SummaryCard label="Cuentas por cobrar" value="—" tone="amber" />
-        <SummaryCard label="Cuentas por pagar" value="—" tone="red" />
-        <SummaryCard label="Pedidos pendientes" value="—" tone="blue" />
+        <SummaryCard
+          label="Cuentas por cobrar"
+          value={porCobrar === null ? '—' : `$${porCobrar.toFixed(0)}`}
+          tone="amber"
+        />
+        <SummaryCard
+          label="Cuentas por pagar"
+          value={porPagar === null ? '—' : `$${porPagar.toFixed(0)}`}
+          tone="red"
+        />
+        <SummaryCard
+          label="Pedidos pendientes"
+          value={pedidosPendientes === null ? '—' : String(pedidosPendientes)}
+          tone="blue"
+        />
         <SummaryCard
           label="Stock bajo"
           value={lowStockCount === null ? '—' : String(lowStockCount)}
