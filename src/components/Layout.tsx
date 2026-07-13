@@ -15,6 +15,7 @@ import {
   LogOut,
   Gavel,
   BookOpen,
+  BarChart3,
   CloudOff
 } from 'lucide-react'
 
@@ -26,7 +27,8 @@ const NAV_ITEMS = [
   { to: '/licitaciones', label: 'Licitar', icon: Gavel, module: 'quotes', action: 'view' },
   { to: '/pedidos', label: 'Pedidos', icon: Truck, module: 'orders', action: 'view' },
   { to: '/clientes', label: 'Clientes', icon: Users, module: 'clients', action: 'view' },
-  { to: '/finanzas', label: 'Finanzas', icon: Wallet, module: 'finance', action: 'view' }
+  { to: '/finanzas', label: 'Finanzas', icon: Wallet, module: 'finance', action: 'view' },
+  { to: '/reportes', label: 'Reportes', icon: BarChart3, module: 'reports', action: 'view' }
 ]
 
 export default function Layout() {

@@ -205,7 +205,11 @@ export default function Pedidos() {
       )}
 
       {detailOrder && (
-        <OrderDetailModal order={detailOrder} onClose={() => setDetailOrder(null)} />
+        <OrderDetailModal
+          order={detailOrder}
+          onClose={() => setDetailOrder(null)}
+          onUpdated={loadOrders}
+        />
       )}
     </div>
   )
@@ -508,9 +512,20 @@ interface OrderItemDetail {
   product: { name: string; sku: string } | null
 }
 
-function OrderDetailModal({ order, onClose }: { order: OrderRow; onClose: () => void }) {
+function OrderDetailModal({
+  order,
+  onClose,
+  onUpdated
+}: {
+  order: OrderRow
+  onClose: () => void
+  onUpdated: () => void
+}) {
+  const can = useAuthStore((s) => s.can)
+  const canEdit = can('orders', 'edit')
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<OrderItemDetail[]>([])
+  const [editing, setEditing] = useState(false)
   const [full, setFull] = useState<{
     signature_data: string | null
     received_by: string | null
@@ -607,7 +622,200 @@ function OrderDetailModal({ order, onClose }: { order: OrderRow; onClose: () => 
                 />
               </div>
             )}
+            {order.status === 'pendiente' && canEdit && (
+              <button
+                onClick={() => setEditing(true)}
+                className="w-full bg-gray-100 text-gray-700 rounded-lg py-2.5 text-sm font-medium"
+              >
+                Editar productos del pedido
+              </button>
+            )}
           </>
+        )}
+      </div>
+
+      {editing && (
+        <EditOrderModal
+          orderId={order.id}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false)
+            onUpdated()
+            onClose()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditOrderModal({
+  orderId,
+  onClose,
+  onSaved
+}: {
+  orderId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [products, setProducts] = useState<Product[]>([])
+  const [items, setItems] = useState<LineItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: productsData }, { data: itemsData }] = await Promise.all([
+        supabase.from('products').select('id, name, sale_price, unit').eq('active', true).order('name'),
+        supabase.from('order_items').select('*').eq('order_id', orderId)
+      ])
+      setProducts((productsData as Product[]) ?? [])
+      setItems(
+        ((itemsData as any[]) ?? []).map((it) => ({
+          product_id: it.product_id,
+          quantity: it.quantity,
+          unit_price: it.unit_price
+        }))
+      )
+      setLoading(false)
+    }
+    load()
+  }, [orderId])
+
+  const total = useMemo(
+    () => items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0),
+    [items]
+  )
+
+  function updateItem(index: number, patch: Partial<LineItem>) {
+    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
+  }
+  function addItem() {
+    setItems((prev) => [...prev, { product_id: null, quantity: 1, unit_price: 0 }])
+  }
+  function removeItem(index: number) {
+    setItems((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+
+    const validItems = items.filter((it) => it.product_id && it.quantity > 0)
+    if (validItems.length === 0) {
+      setError('Agrega al menos un producto.')
+      return
+    }
+
+    setSubmitting(true)
+
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ total })
+      .eq('id', orderId)
+
+    if (updateError) {
+      setError(updateError.message)
+      setSubmitting(false)
+      return
+    }
+
+    await supabase.from('order_items').delete().eq('order_id', orderId)
+    const { error: itemsError } = await supabase.from('order_items').insert(
+      validItems.map((it) => ({
+        order_id: orderId,
+        product_id: it.product_id,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        subtotal: it.quantity * it.unit_price
+      }))
+    )
+
+    setSubmitting(false)
+    if (itemsError) {
+      setError(itemsError.message)
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800">Editar productos del pedido</h2>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-redisteca-blue" />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-2">
+              {items.map((item, index) => (
+                <div key={index} className="flex gap-2 items-center">
+                  <select
+                    value={item.product_id ?? ''}
+                    onChange={(e) => {
+                      const product = products.find((p) => p.id === e.target.value)
+                      updateItem(index, {
+                        product_id: e.target.value || null,
+                        unit_price: product?.sale_price ?? item.unit_price
+                      })
+                    }}
+                    className="input text-sm flex-1"
+                  >
+                    <option value="">Selecciona producto...</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
+                    className="input text-sm w-16"
+                  />
+                  {items.length > 1 && (
+                    <button type="button" onClick={() => removeItem(index)} className="text-red-400">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addItem}
+                className="text-sm text-redisteca-blue font-medium"
+              >
+                + Agregar línea
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+              <span className="text-sm text-gray-500">Total</span>
+              <span className="text-lg font-semibold text-gray-800">${total.toFixed(2)}</span>
+            </div>
+
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full flex items-center justify-center gap-2 bg-redisteca-blue text-white rounded-lg py-2.5 font-medium disabled:opacity-60"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Guardar cambios
+            </button>
+          </form>
         )}
       </div>
     </div>

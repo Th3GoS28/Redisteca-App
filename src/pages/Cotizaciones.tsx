@@ -183,7 +183,11 @@ export default function Cotizaciones() {
       )}
 
       {detailQuote && (
-        <QuoteDetailModal quote={detailQuote} onClose={() => setDetailQuote(null)} />
+        <QuoteDetailModal
+          quote={detailQuote}
+          onClose={() => setDetailQuote(null)}
+          onUpdated={loadQuotes}
+        />
       )}
     </div>
   )
@@ -473,13 +477,24 @@ interface QuoteItemDetail {
   subtotal: number
 }
 
-function QuoteDetailModal({ quote, onClose }: { quote: QuoteRow; onClose: () => void }) {
+function QuoteDetailModal({
+  quote,
+  onClose,
+  onUpdated
+}: {
+  quote: QuoteRow
+  onClose: () => void
+  onUpdated: () => void
+}) {
+  const can = useAuthStore((s) => s.can)
+  const canEdit = can('quotes', 'edit')
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<QuoteItemDetail[]>([])
   const [notes, setNotes] = useState<string | null>(null)
   const [validUntil, setValidUntil] = useState<string | null>(null)
   const [clientRif, setClientRif] = useState<string | null>(null)
   const [createdAt, setCreatedAt] = useState<string>(new Date().toISOString())
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -563,14 +578,291 @@ function QuoteDetailModal({ quote, onClose }: { quote: QuoteRow; onClose: () => 
 
             {notes && <p className="text-sm text-gray-600">Notas: {notes}</p>}
 
-            <button
-              onClick={handleDownload}
-              className="w-full flex items-center justify-center gap-2 bg-redisteca-blue text-white rounded-lg py-2.5 text-sm font-medium"
-            >
-              <Download className="w-4 h-4" />
-              Descargar PDF
-            </button>
+            <div className="flex gap-2">
+              {quote.status === 'borrador' && canEdit && (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="flex-1 bg-gray-100 text-gray-700 rounded-lg py-2.5 text-sm font-medium"
+                >
+                  Editar
+                </button>
+              )}
+              <button
+                onClick={handleDownload}
+                className="flex-1 flex items-center justify-center gap-2 bg-redisteca-blue text-white rounded-lg py-2.5 text-sm font-medium"
+              >
+                <Download className="w-4 h-4" />
+                Descargar PDF
+              </button>
+            </div>
           </>
+        )}
+      </div>
+
+      {editing && (
+        <EditQuoteModal
+          quoteId={quote.id}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false)
+            onUpdated()
+            onClose()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function EditQuoteModal({
+  quoteId,
+  onClose,
+  onSaved
+}: {
+  quoteId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [clients, setClients] = useState<Client[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [clientId, setClientId] = useState('')
+  const [validUntil, setValidUntil] = useState('')
+  const [items, setItems] = useState<LineItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: clientsData }, { data: productsData }, { data: quoteData }, { data: itemsData }] =
+        await Promise.all([
+          supabase.from('clients').select('id, name').eq('active', true).order('name'),
+          supabase
+            .from('products')
+            .select('id, sku, name, sale_price, unit')
+            .eq('active', true)
+            .order('name'),
+          supabase.from('quotes').select('client_id, valid_until').eq('id', quoteId).single(),
+          supabase.from('quote_items').select('*').eq('quote_id', quoteId)
+        ])
+      setClients((clientsData as Client[]) ?? [])
+      setProducts((productsData as Product[]) ?? [])
+      setClientId((quoteData as any)?.client_id ?? '')
+      setValidUntil((quoteData as any)?.valid_until ?? '')
+      setItems(
+        ((itemsData as any[]) ?? []).map((it) => ({
+          product_id: it.product_id,
+          description: it.description,
+          quantity: it.quantity,
+          unit_price: it.unit_price
+        }))
+      )
+      setLoading(false)
+    }
+    load()
+  }, [quoteId])
+
+  const total = useMemo(
+    () => items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0),
+    [items]
+  )
+
+  function updateItem(index: number, patch: Partial<LineItem>) {
+    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
+  }
+
+  function selectProduct(index: number, productId: string) {
+    const product = products.find((p) => p.id === productId)
+    if (!product) {
+      updateItem(index, { product_id: null })
+      return
+    }
+    updateItem(index, {
+      product_id: product.id,
+      description: product.name,
+      unit_price: product.sale_price
+    })
+  }
+
+  function addItem() {
+    setItems((prev) => [...prev, { product_id: null, description: '', quantity: 1, unit_price: 0 }])
+  }
+  function removeItem(index: number) {
+    setItems((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+
+    if (!clientId) {
+      setError('Selecciona un cliente.')
+      return
+    }
+    const validItems = items.filter((it) => it.description.trim() && it.quantity > 0)
+    if (validItems.length === 0) {
+      setError('Agrega al menos un producto o concepto.')
+      return
+    }
+
+    setSubmitting(true)
+
+    const { error: updateError } = await supabase
+      .from('quotes')
+      .update({ client_id: clientId, valid_until: validUntil || null, subtotal: total, total })
+      .eq('id', quoteId)
+
+    if (updateError) {
+      setError(updateError.message)
+      setSubmitting(false)
+      return
+    }
+
+    await supabase.from('quote_items').delete().eq('quote_id', quoteId)
+    const { error: itemsError } = await supabase.from('quote_items').insert(
+      validItems.map((it) => ({
+        quote_id: quoteId,
+        product_id: it.product_id,
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        subtotal: it.quantity * it.unit_price
+      }))
+    )
+
+    setSubmitting(false)
+    if (itemsError) {
+      setError(itemsError.message)
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800">Editar cotización</h2>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-redisteca-blue" />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+              <select
+                required
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                className="input"
+              >
+                <option value="">Selecciona un cliente...</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Válida hasta (opcional)
+              </label>
+              <input
+                type="date"
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+                className="input"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Productos</label>
+              {items.map((item, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-2.5 space-y-2">
+                  <div className="flex gap-2">
+                    <select
+                      value={item.product_id ?? ''}
+                      onChange={(e) => selectProduct(index, e.target.value)}
+                      className="input text-sm flex-1"
+                    >
+                      <option value="">Producto libre / personalizado...</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (${p.sale_price.toFixed(2)})
+                        </option>
+                      ))}
+                    </select>
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="text-red-400 shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    value={item.description}
+                    onChange={(e) => updateItem(index, { description: e.target.value })}
+                    placeholder="Descripción"
+                    className="input text-sm"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
+                      placeholder="Cantidad"
+                      className="input text-sm"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.unit_price}
+                      onChange={(e) => updateItem(index, { unit_price: Number(e.target.value) })}
+                      placeholder="Precio unitario"
+                      className="input text-sm"
+                    />
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addItem}
+                className="text-sm text-redisteca-blue font-medium"
+              >
+                + Agregar línea
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+              <span className="text-sm text-gray-500">Total</span>
+              <span className="text-lg font-semibold text-gray-800">${total.toFixed(2)}</span>
+            </div>
+
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full flex items-center justify-center gap-2 bg-redisteca-blue text-white rounded-lg py-2.5 font-medium disabled:opacity-60"
+            >
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Guardar cambios
+            </button>
+          </form>
         )}
       </div>
     </div>

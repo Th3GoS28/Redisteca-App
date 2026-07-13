@@ -12,6 +12,7 @@ import Notificaciones from './pages/Notificaciones'
 import Usuarios from './pages/Usuarios'
 import Licitaciones from './pages/Licitaciones'
 import Catalogo from './pages/Catalogo'
+import Reportes from './pages/Reportes'
 
 export default function App() {
   return (
@@ -82,6 +83,14 @@ export default function App() {
             element={
               <RequirePermission module="finance" action="view">
                 <Finanzas />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/reportes"
+            element={
+              <RequirePermission module="reports" action="view">
+                <Reportes />
               </RequirePermission>
             }
           />
